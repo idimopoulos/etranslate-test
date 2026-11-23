@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+
+## Description: Manage a temporary cloudflared Quick Tunnel (random *.trycloudflare.com URL) used as the eTranslation callback base URL.
+## Usage: tunnel [start|stop|status]
+## Example: "ddev tunnel start" or "ddev tunnel stop"
+
+set -euo pipefail
+
+cd "${DDEV_APPROOT}"
+VAR_DIR="${DDEV_APPROOT}/var"
+LOG="${VAR_DIR}/tunnel.log"
+PID_FILE="${VAR_DIR}/tunnel.pid"
+URL_FILE="${VAR_DIR}/callback_base_url"
+mkdir -p "${VAR_DIR}"
+
+is_running() {
+  [[ -f "${PID_FILE}" ]] && kill -0 "$(cat "${PID_FILE}")" 2>/dev/null
+}
+
+stop() {
+  if is_running; then
+    # The tunnel runs in its own session, so kill the whole process group
+    # (ddev share + the provider script + cloudflared).
+    kill -- "-$(cat "${PID_FILE}")" 2>/dev/null || kill "$(cat "${PID_FILE}")" 2>/dev/null || true
+    echo "Tunnel stopped."
+  else
+    echo "No tunnel running."
+  fi
+  rm -f "${PID_FILE}" "${URL_FILE}"
+}
+
+start() {
+  if ! command -v cloudflared >/dev/null 2>&1; then
+    echo "cloudflared is not installed on the host. See https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/" >&2
+    exit 1
+  fi
+  if is_running; then
+    echo "Restarting the running tunnel to get a fresh URL..."
+    stop >/dev/null
+  fi
+  rm -f "${URL_FILE}"
+
+  # No --tunnel/--hostname: cloudflared creates a Quick Tunnel with a new random URL.
+  # This never touches a named tunnel configured in ~/.cloudflared.
+  setsid nohup ddev share --provider=cloudflared >"${LOG}" 2>&1 < /dev/null &
+  echo $! > "${PID_FILE}"
+
+  echo -n "Starting cloudflared Quick Tunnel"
+  local url=""
+  for _ in $(seq 1 60); do
+    url=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "${LOG}" | grep -v 'api\.trycloudflare' | head -1 || true)
+    [[ -n "${url}" ]] && break
+    if ! is_running; then
+      echo; echo "Tunnel exited early. Log:" >&2; cat "${LOG}" >&2; rm -f "${PID_FILE}"; exit 1
+    fi
+    echo -n "."; sleep 1
+  done
+  echo
+
+  if [[ -z "${url}" ]]; then
+    echo "Timed out waiting for the tunnel URL. See ${LOG}" >&2
+    stop >/dev/null
+    exit 1
+  fi
+
+  echo "${url}" > "${URL_FILE}"
+  echo "Callback base URL: ${url}"
+  echo "(saved to var/callback_base_url; the send form uses it by default)"
+}
+
+status() {
+  if is_running && [[ -f "${URL_FILE}" ]]; then
+    echo "Tunnel running: $(cat "${URL_FILE}")"
+  else
+    echo "No tunnel running. Start one with: ddev tunnel start"
+  fi
+}
+
+case "${1:-status}" in
+  start) start ;;
+  stop) stop ;;
+  status) status ;;
+  *) echo "Usage: ddev tunnel [start|stop|status]" >&2; exit 1 ;;
+esac

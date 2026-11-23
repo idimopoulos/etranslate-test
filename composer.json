@@ -1,0 +1,21 @@
+{
+    "name": "local/etranslate-test",
+    "description": "Standalone harness to send text to EC eTranslation (REST v2) and store raw + decoded callbacks.",
+    "type": "project",
+    "require": {
+        "php": ">=8.2",
+        "ext-pdo": "*",
+        "guzzlehttp/guzzle": "^7.9"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/"
+        },
+        "files": [
+            "src/helpers.php"
+        ]
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

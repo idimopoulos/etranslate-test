@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+## Description: Install dependencies, create the database tables and start a temporary cloudflared callback tunnel.
+## Usage: setup
+## Example: "ddev setup"
+
+set -euo pipefail
+cd "${DDEV_APPROOT}"
+
+if [[ ! -f .ddev/.env ]]; then
+  echo "Missing .ddev/.env. Run: cp .ddev/.env.example .ddev/.env (then fill it in and run ddev restart)" >&2
+  exit 1
+fi
+
+ddev composer install --no-interaction
+# Any request creates the tables; do it now so setup fails loudly if the DB is unreachable.
+ddev exec php -r 'require "vendor/autoload.php"; App\Db::pdo(); echo "Database ready.\n";'
+ddev tunnel start
+
+echo
+echo "Done. Open ${DDEV_PRIMARY_URL:-https://etranslate-test.ddev.site}"

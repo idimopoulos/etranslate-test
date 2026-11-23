@@ -1,0 +1,10 @@
+name: etranslate-test
+type: php
+docroot: public
+php_version: "8.4"
+webserver_type: apache-fpm
+xdebug_enabled: false
+database:
+  type: mariadb
+  version: "10.11"
+composer_version: "2"
